@@ -1,112 +1,96 @@
+let mysql = require("mysql2"); //reference to database/npm package
+let inquirer = require("inquirer"); //npm package
 
-var mysql = require("mysql");
-var inquirer = require("inquirer");
-require("console.table");
-
-var connection = mysql.createConnection({
-  host: "localhost",
-
-  port: 3306,
-
-  user: "root",
-
-  password: "",
-  database: "bamazon"
+//variable that connects Mysql database to js file using root localhost
+let connection = mysql.createConnection({
+    host: "localhost",
+    port: 3306,
+    user: "root",
+    password: "NBABubblemerch",
+    database: "bamazonDB"
 });
 
-connection.connect(function(err) {
-  if (err) {
-    console.error("error connecting: " + err.stack);
-  }
-  loadProducts();
-});
-
-function loadProducts() {
-  connection.query("SELECT * FROM products", function(err, res) {
+//console logging if no connection to databse is made 
+connection.connect(function (err){
     if (err) throw err;
+    console.log(connection.threadId);
+    displayProducts();
+});
 
-    console.table(res);
+//function used when user inputs 'node' js file name into the terminal 
+function displayProducts() {
+    connection.query("SELECT * FROM products", function (err, res) {
+       
+        console.log("-----------------------");
+        console.log("Welcome To Bamazon"); //text to begin the 'shopping' process 
+        console.log("-----------------------");
+        //loops through results from database and consle logs them for user to choose by ID_name
+        for (var i = 0; i < res.length; i++) {
+            console.log(res[i].item_id + " | " + res[i].product_name + " | " + "Department: " + res[i].department_name + " | " + "Price: " + res[i].price + " | " + "Quantity in Stock: " + res[i].stock_quantity + " | ");
 
-    promptCustomerForItem(res);
-  });
-}
-
-function promptCustomerForItem(inventory) {
-  inquirer
-    .prompt([
-      {
-        type: "input",
-        name: "choice",
-        message: "What is the ID of the item you would you like to purchase? [Quit with Q]",
-        validate: function(val) {
-          return !isNaN(val) || val.toLowerCase() === "q";
-        }
-      }
-    ])
-    .then(function(val) {
-      checkIfShouldExit(val.choice);
-      var choiceId = parseInt(val.choice);
-      var product = checkInventory(choiceId, inventory);
-
-      if (product) {
-        promptCustomerForQuantity(product);
-      }
-      else {
-        console.log("\nThat item is not in the inventory.");
-        loadProducts();
-      }
+        };
+        start();
     });
-}
+};
 
-function promptCustomerForQuantity(product) {
-  inquirer
-    .prompt([
-      {
-        type: "input",
-        name: "quantity",
-        message: "How many would you like? [Quit with Q]",
-        validate: function(val) {
-          return val > 0 || val.toLowerCase() === "q";
+//function prompt following listed items from table in database 
+function start() {
+    inquirer.prompt([ //prompts user to make a selection of which item they would like to purchase and how much
+        {
+            name: "desiredItem",
+            type: "input",
+            message: "Please enter item ID of the item you are looking for: ",
+        },
+        {
+            name: "desiredQuantity",
+            type: "input",
+            message: "Enter the amount of items you would like to purchase: " 
         }
-      }
-    ])
-    .then(function(val) {
-      checkIfShouldExit(val.quantity);
-      var quantity = parseInt(val.quantity);
+    ]).then(function (answer) { //reccords user answer 
+        connection.query("SELECT * FROM products WHERE item_id = ?",[answer.desiredItem], function (err, res) {
+            if (err) throw err;
+             
+            for (let i = 0; i < res.length; i++) {
+                let quantitySelected = parseInt(answer.desiredQuantity);
 
-      if (quantity > product.stock_quantity) {
-        console.log("\nInsufficient quantity!");
-        loadProducts();
-      }
-      else {
-        makePurchase(product, quantity);
-      }
-    });
-}
+                let total = answer.desiredQuantity * res[i].price;
 
-function makePurchase(product, quantity) {
-  connection.query(
-    "UPDATE products SET stock_quantity = stock_quantity - ? WHERE item_id = ?",
-    [quantity, product.item_id],
-    function(err, res) {
-      console.log("\nSuccessfully purchased " + quantity + " " + product.product_name + "'s!");
-      loadProducts();
-    }
-  );
-}
+                let product_name = res[i].product_name
 
-function checkInventory(choiceId, inventory) {
-  for (var i = 0; i < inventory.length; i++) {
-    if (inventory[i].item_id === choiceId) {
-      return inventory[i];
-    }
-  }
-  return null;
-}
+                let stockUpdate = res[i].stock_quantity - quantitySelected;
 
-function checkIfShouldExit(choice) {
-  if (choice.toLowerCase() === "q") {
-    console.log("Goodbye!");
-    process.exit(0);
-  }
-}
+                
+                if (quantitySelected > res[i].stock_quantity) {
+                    console.log("Insufficient quantity, Sorry!");
+                    connection.end();
+                }
+                else { 
+                    console.log("Item Chosen: " + product_name);
+                    
+                    updateStocks(answer.desiredItem, stockUpdate);
+                    console.log("There are " + stockUpdate + " " + product_name + " left in stock");
+                }
+                
+            
+                function updateStocks(target_item, stockUpdate) {
+                    connection.query("UPDATE products SET ? WHERE ?",
+                    [
+                        {
+                            stock_quantity: stockUpdate
+                        },
+                        {
+                            item_id: target_item
+                        }
+                    ], function (err, res){
+                        if (err) throw err;
+                        console.log("Stock Updated");
+                        connection.end();
+
+                        console.log("Thank you for your purchase! Your final total is: $ " + total + "(Note: This does include tax!)")
+                    });
+                }
+            }
+
+        });
+    })
+};
